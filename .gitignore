@@ -1,0 +1,21 @@
+# Virtual environments
+.venv/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Saved model artifacts
+models/*.pkl
+
+# Generated evaluation artifacts
+outputs/metrics/*
+outputs/errors/*
+outputs/reports/*
+!outputs/metrics/.gitkeep
+!outputs/errors/.gitkeep
+!outputs/reports/.gitkeep
+
+# Downloaded raw datasets
+data/*
+!data/.gitkeep

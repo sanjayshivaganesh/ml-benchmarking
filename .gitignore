@@ -7,14 +7,17 @@ __pycache__/
 
 # Saved model artifacts
 models/*.pkl
+models/*.joblib
 
 # Generated evaluation artifacts
 outputs/metrics/*
 outputs/errors/*
 outputs/reports/*
+outputs/experiments/*
 !outputs/metrics/.gitkeep
 !outputs/errors/.gitkeep
 !outputs/reports/.gitkeep
+!outputs/experiments/.gitkeep
 
 # Downloaded raw datasets
 data/*

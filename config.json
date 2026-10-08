@@ -1,0 +1,11 @@
+{
+  "dataset": "breast_cancer",
+  "models": [
+    "logistic_regression",
+    "random_forest",
+    "gradient_boosting"
+  ],
+  "random_state": 42,
+  "test_size": 0.2,
+  "output_dir": "outputs/experiments"
+}

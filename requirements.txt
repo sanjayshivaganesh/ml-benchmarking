@@ -6,3 +6,4 @@ seaborn
 joblib
 tqdm
 pyyaml
+streamlit

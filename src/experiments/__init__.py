@@ -19,6 +19,12 @@ from .registry import (
     validate_dataset,
     validate_models,
 )
+from .visualization import (
+    metric_comparison_table,
+    plot_confusion_matrices,
+    plot_confusion_matrix,
+    plot_roc_curves,
+)
 
 __all__ = [
     "DEFAULT_CONFIG_PATH",
@@ -30,6 +36,10 @@ __all__ = [
     "list_datasets",
     "list_models",
     "load_config",
+    "metric_comparison_table",
+    "plot_confusion_matrices",
+    "plot_confusion_matrix",
+    "plot_roc_curves",
     "resolve_models",
     "run_experiment",
     "validate_dataset",

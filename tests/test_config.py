@@ -82,6 +82,15 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(config.random_state, 42)
         self.assertEqual(config.test_size, 0.2)
 
+    def test_config_all_expands_from_the_model_registry(self):
+        payload = {
+            "dataset": "breast_cancer",
+            "models": ["all"],
+            "output_dir": "outputs/experiments",
+        }
+        config = load_config(self._write(payload))
+        self.assertIs(config.models, MODEL_NAMES)
+
     def test_explicit_seed_and_split_override_the_defaults(self):
         payload = {
             "dataset": "breast_cancer",

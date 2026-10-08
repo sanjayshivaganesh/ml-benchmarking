@@ -19,6 +19,7 @@ import pandas as pd
 from src.analysis.error_analysis import analyze_errors
 from src.data.data_loader import load_dataset
 from src.evaluation.evaluate import evaluate_model
+from src.experiments.registry import resolve_models, validate_dataset
 from src.models.models import get_models
 from src.training.train import TrainedModel, train_one
 
@@ -71,7 +72,8 @@ def run_experiment(
     dataset:
         Dataset name understood by ``load_dataset``.
     models:
-        One model name, or a list of names, returned by ``get_models``.
+        One model name, a list of names, or ``"all"``. Names come from the
+        model registry. ``"all"`` expands to every registered model.
     random_state:
         Seed forwarded to the split and the classifiers.
     test_size:
@@ -80,18 +82,19 @@ def run_experiment(
     model_dir:
         Directory for fitted pipelines. Defaults to ``outputs/experiments``.
     """
-    selected = _resolve_models(models)
+    dataset_name = validate_dataset(dataset)
+    selected = resolve_models(models)
     available = get_models(random_state=random_state)
     _require_known_models(selected, available)
 
-    split = load_dataset(dataset, test_size=test_size, random_state=random_state)
+    split = load_dataset(dataset_name, test_size=test_size, random_state=random_state)
     output_dir = Path(model_dir) if model_dir is not None else DEFAULT_EXPERIMENT_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
 
     fitted: dict[str, ModelResult] = {}
     for model_name in selected:
         trained = train_one(
-            dataset=dataset,
+            dataset=dataset_name,
             model=model_name,
             random_state=random_state,
             test_size=test_size,
@@ -113,7 +116,7 @@ def run_experiment(
 
     class_labels = dict(split.metadata["class_labels"])
     return ExperimentResult(
-        dataset=dataset,
+        dataset=dataset_name,
         models=selected,
         random_state=random_state,
         test_size=float(split.metadata["test_size"]),
@@ -205,23 +208,9 @@ def _experiment_metadata(
     }
 
 
-def _resolve_models(models: str | list[str] | tuple[str, ...]) -> tuple[str, ...]:
-    if isinstance(models, str):
-        selected = (models,)
-    elif isinstance(models, (list, tuple)):
-        selected = tuple(models)
-    else:
-        raise TypeError("models must be a model name or a list of model names.")
-    if not selected:
-        raise ValueError("models must contain at least one model name.")
-    if len(selected) != len(set(selected)):
-        raise ValueError("models must not contain duplicate names.")
-    return selected
-
-
 def _require_known_models(selected: tuple[str, ...], available: dict[str, Any]) -> None:
     unknown = [name for name in selected if name not in available]
     if unknown:
         supported = ", ".join(available)
         joined = ", ".join(repr(name) for name in unknown)
-        raise ValueError(f"Unknown model(s) {joined}. Supported names: {supported}.")
+        raise ValueError(f"Unknown model(s) {joined}. Available models: {supported}.")

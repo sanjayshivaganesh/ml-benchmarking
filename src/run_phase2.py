@@ -83,6 +83,7 @@ def format_summary(run: Phase2Run) -> str:
         f"Experiment {run.experiment_id}",
         f"Dataset: {result.dataset}",
         f"Models: {', '.join(result.models)}",
+        f"Class labels: {_class_label_text(result.class_labels)}",
         f"random_state: {result.random_state}",
         f"test_size: {result.test_size}",
         f"Output: {run.output_dir}",
@@ -110,8 +111,9 @@ def _write_outputs(result: ExperimentResult, output_dir: Path, experiment_id: st
     metadata["experiment_id"] = experiment_id
     metadata["output_dir"] = str(output_dir)
     metadata["class_labels"] = {
-        str(label): name for label, name in result.class_labels.items()
+        str(int(label)): str(name) for label, name in result.class_labels.items()
     }
+    metadata["positive_class"] = _positive_class(result.class_labels)
     metadata["files"] = {
         "metrics": "metrics.json",
         "error_analysis": "error_analysis.json",
@@ -139,6 +141,21 @@ def _write_outputs(result: ExperimentResult, output_dir: Path, experiment_id: st
     _write_json(output_dir / "metrics.json", result.metrics)
     _write_json(output_dir / "error_analysis.json", result.error_analysis)
     _write_json(output_dir / "predictions.json", predictions)
+
+
+def _class_label_text(class_labels: dict[Any, Any]) -> str:
+    keys = sorted(class_labels, key=lambda key: int(key))
+    return ", ".join(f"{int(key)} = {class_labels[key]}" for key in keys)
+
+
+def _positive_class(class_labels: dict[Any, Any]) -> dict[str, Any]:
+    matches = [key for key in class_labels if int(key) == 1]
+    if len(matches) != 1:
+        raise ValueError(
+            "Experiment metadata needs the name of class 1. "
+            f"Found labels {dict(class_labels)}."
+        )
+    return {"label": 1, "name": str(class_labels[matches[0]])}
 
 
 def _json_index(value: Any) -> int | str:

@@ -10,7 +10,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.experiments.registry import resolve_models, validate_dataset, validate_models
+from src.experiments.registry import resolve_models, validate_dataset
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = _PROJECT_ROOT / "config.json"
@@ -105,7 +105,7 @@ def _from_mapping(payload: dict) -> ExperimentConfig:
         raise ValueError(f"Configuration is missing required field(s): {joined}.")
 
     dataset = validate_dataset(payload["dataset"])
-    models = validate_models(payload["models"])
+    models = resolve_models(payload["models"])
     random_state = _require_int(
         payload.get("random_state", DEFAULT_RANDOM_STATE),
         "random_state",

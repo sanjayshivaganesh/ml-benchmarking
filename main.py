@@ -11,20 +11,29 @@ import argparse
 import sys
 
 from src.experiments.config import apply_overrides, load_config
+from src.experiments.registry import list_datasets, list_models
 from src.run_phase2 import format_summary, run_phase2
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line overrides for ``config.json``."""
+    datasets = ", ".join(list_datasets())
+    models = ", ".join(list_models())
     parser = argparse.ArgumentParser(
         description="Run one experiment on a Phase 1 dataset and selected models."
     )
-    parser.add_argument("--dataset", help="Dataset name. Overrides config.json.")
+    parser.add_argument(
+        "--dataset",
+        help=f"Dataset name. Overrides config.json. Available datasets: {datasets}.",
+    )
     parser.add_argument(
         "--models",
         nargs="*",
         default=None,
-        help="Model names, or 'all'. Overrides config.json.",
+        help=(
+            "Model names, or 'all' for every registered model. "
+            f"Overrides config.json. Available models: {models}."
+        ),
     )
     parser.add_argument(
         "--random-state",

@@ -17,14 +17,42 @@ DEFAULT_CONFIG_PATH = _PROJECT_ROOT / "config.json"
 DEFAULT_RANDOM_STATE = 42
 DEFAULT_TEST_SIZE = 0.2
 
-_FIELDS = {"dataset", "models", "random_state", "test_size", "output_dir"}
+_FIELDS = {"dataset", "models", "random_state", "test_size", "output_dir", "diagnostics"}
 _REQUIRED = ("dataset", "models", "output_dir")
+_DIAGNOSTIC_FIELDS = (
+    "enabled",
+    "slicing",
+    "hard_examples",
+    "robustness",
+    "explanations",
+    "report",
+    "plots",
+)
 _PHASE1_OUTPUT_DIRS = (
     _PROJECT_ROOT / "models",
     _PROJECT_ROOT / "outputs" / "metrics",
     _PROJECT_ROOT / "outputs" / "errors",
     _PROJECT_ROOT / "outputs" / "reports",
 )
+
+
+@dataclass(frozen=True)
+class DiagnosticsConfig:
+    """Optional Phase 3 checks for one experiment.
+
+    ``enabled`` is false unless the configuration turns diagnostics on.
+    The component flags default to true, so enabling diagnostics runs slicing,
+    hard examples, robustness, explanations, the failure report, and plots.
+    ``plots`` can be false without skipping the JSON or markdown outputs.
+    """
+
+    enabled: bool = False
+    slicing: bool = True
+    hard_examples: bool = True
+    robustness: bool = True
+    explanations: bool = True
+    report: bool = True
+    plots: bool = True
 
 
 @dataclass(frozen=True)
@@ -40,6 +68,7 @@ class ExperimentConfig:
     random_state: int
     test_size: float
     output_dir: Path
+    diagnostics: DiagnosticsConfig = DiagnosticsConfig()
 
 
 def apply_overrides(
@@ -49,6 +78,7 @@ def apply_overrides(
     models: str | list[str] | tuple[str, ...] | None = None,
     random_state: int | None = None,
     test_size: float | None = None,
+    diagnostics_enabled: bool | None = None,
 ) -> ExperimentConfig:
     """Return a new config with command-line values applied.
 
@@ -63,12 +93,26 @@ def apply_overrides(
         else _require_int(random_state, "random_state")
     )
     selected_size = config.test_size if test_size is None else _require_test_size(test_size)
+    diagnostics = config.diagnostics
+    if diagnostics_enabled is not None:
+        if not isinstance(diagnostics_enabled, bool):
+            raise ValueError("diagnostics.enabled must be a boolean.")
+        diagnostics = DiagnosticsConfig(
+            enabled=diagnostics_enabled,
+            slicing=diagnostics.slicing,
+            hard_examples=diagnostics.hard_examples,
+            robustness=diagnostics.robustness,
+            explanations=diagnostics.explanations,
+            report=diagnostics.report,
+            plots=diagnostics.plots,
+        )
     return ExperimentConfig(
         dataset=selected_dataset,
         models=selected_models,
         random_state=selected_seed,
         test_size=selected_size,
         output_dir=config.output_dir,
+        diagnostics=diagnostics,
     )
 
 
@@ -118,7 +162,31 @@ def _from_mapping(payload: dict) -> ExperimentConfig:
         random_state=random_state,
         test_size=test_size,
         output_dir=output_dir,
+        diagnostics=_diagnostics(payload.get("diagnostics")),
     )
+
+
+def _diagnostics(value) -> DiagnosticsConfig:
+    if value is None:
+        return DiagnosticsConfig()
+    if not isinstance(value, dict):
+        raise ValueError("diagnostics must be a JSON object.")
+    unknown = sorted(set(value) - set(_DIAGNOSTIC_FIELDS))
+    if unknown:
+        joined = ", ".join(unknown)
+        raise ValueError(f"Unknown diagnostics field(s): {joined}.")
+    selected = {}
+    for field in _DIAGNOSTIC_FIELDS:
+        if field not in value:
+            continue
+        selected[field] = _require_bool(value[field], f"diagnostics.{field}")
+    return DiagnosticsConfig(**selected)
+
+
+def _require_bool(value, field: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{field} must be a boolean.")
+    return value
 
 
 def _require_int(value, field: str) -> int:

@@ -8,12 +8,15 @@ visualization module.
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import pandas as pd
 import streamlit as st
 
+from src.diagnostics.hard_examples import hard_examples_directory
 from src.experiments.config import (
     DEFAULT_RANDOM_STATE,
     DEFAULT_TEST_SIZE,
@@ -179,8 +182,64 @@ def _show(outcome: Phase2Run) -> None:
     st.pyplot(figure)
     plt.close(figure)
 
+    st.header("Hard examples")
+    _show_hard_examples(outcome)
+
     st.header("Outputs")
     st.write(str(outcome.output_dir))
+    st.write(str(hard_examples_directory(outcome.output_dir)))
+
+
+def _show_hard_examples(outcome: Phase2Run) -> None:
+    """Show the hard-example files already written for this experiment."""
+    directory = hard_examples_directory(outcome.output_dir)
+    for model_name in outcome.result.models:
+        path = directory / f"{outcome.result.dataset}_{model_name}_hard_examples.json"
+        st.subheader(model_name)
+        if not path.is_file():
+            st.write(f"No hard-example file at {path}.")
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        summary = payload.get("summary", {})
+        st.write(
+            "Test rows: {n_samples}. "
+            "Correct and confident: {correct_confident}. "
+            "Correct and uncertain: {correct_uncertain}. "
+            "Wrong and confident: {wrong_confident}. "
+            "Wrong and uncertain: {wrong_uncertain}.".format(
+                n_samples=summary.get("n_samples", 0),
+                correct_confident=summary.get("correct_confident", 0),
+                correct_uncertain=summary.get("correct_uncertain", 0),
+                wrong_confident=summary.get("wrong_confident", 0),
+                wrong_uncertain=summary.get("wrong_uncertain", 0),
+            )
+        )
+        st.write("High-confidence errors")
+        st.dataframe(hard_example_table(payload.get("high_confidence_errors", [])))
+        st.write("Most uncertain")
+        st.dataframe(hard_example_table(payload.get("most_uncertain", [])))
+
+
+def hard_example_table(rows) -> pd.DataFrame:
+    """Flatten hard-example records, including original feature values."""
+    records = []
+    for row in rows:
+        record = {
+            key: row.get(key)
+            for key in (
+                "sample_id",
+                "y_true",
+                "y_pred",
+                "probability",
+                "confidence",
+                "uncertainty",
+                "correct",
+            )
+        }
+        features = row.get("features") or {}
+        record.update(features)
+        records.append(record)
+    return pd.DataFrame.from_records(records)
 
 
 def _seed(value) -> int:

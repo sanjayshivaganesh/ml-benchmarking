@@ -14,10 +14,27 @@ outputs/metrics/*
 outputs/errors/*
 outputs/reports/*
 outputs/experiments/*
+outputs/predictions/*
+outputs/diagnostics/slicing/*
+outputs/diagnostics/hard_examples/*
+outputs/diagnostics/robustness/*
+outputs/diagnostics/explanations/*
+outputs/diagnostics/summaries/*
+outputs/diagnostics/failure_analysis.md
+outputs/diagnostics/robustness_report.json
+outputs/diagnostics/model_comparison.json
+outputs/diagnostics/plots/*
+!outputs/diagnostics/plots/.gitkeep
 !outputs/metrics/.gitkeep
 !outputs/errors/.gitkeep
 !outputs/reports/.gitkeep
 !outputs/experiments/.gitkeep
+!outputs/predictions/.gitkeep
+!outputs/diagnostics/slicing/.gitkeep
+!outputs/diagnostics/hard_examples/.gitkeep
+!outputs/diagnostics/robustness/.gitkeep
+!outputs/diagnostics/explanations/.gitkeep
+!outputs/diagnostics/summaries/.gitkeep
 
 # Downloaded raw datasets
 data/*

@@ -38,6 +38,55 @@ METRIC_NAMES = (
     "roc_auc",
     "brier_score",
 )
+LABEL_METRIC_NAMES = (
+    "accuracy",
+    "precision",
+    "recall",
+    "f1",
+)
+
+
+def score_predictions(y_true, y_pred) -> dict[str, float]:
+    """Score existing binary predictions.
+
+    Accuracy, precision, recall, and F1 use the same definitions as
+    ``evaluate_model``. This function does not call a model. Precision,
+    recall, and F1 use positive label ``1`` and ``zero_division=0``.
+    """
+    labels = _as_label_array(y_true)
+    predictions = _as_label_array(y_pred)
+    if predictions.shape[0] != labels.shape[0]:
+        raise ValueError(
+            "Predictions and y_true have different lengths: "
+            f"{predictions.shape[0]} and {labels.shape[0]}."
+        )
+    if labels.size == 0:
+        raise ValueError("y_true must contain at least one sample.")
+    metrics = {
+        "accuracy": accuracy_score(labels, predictions),
+        "precision": precision_score(
+            labels,
+            predictions,
+            pos_label=1,
+            average="binary",
+            zero_division=0,
+        ),
+        "recall": recall_score(
+            labels,
+            predictions,
+            pos_label=1,
+            average="binary",
+            zero_division=0,
+        ),
+        "f1": f1_score(
+            labels,
+            predictions,
+            pos_label=1,
+            average="binary",
+            zero_division=0,
+        ),
+    }
+    return {name: _json_float(metrics[name]) for name in LABEL_METRIC_NAMES}
 
 
 def evaluate_model(model, X_test, y_test) -> dict[str, float]:
@@ -63,28 +112,7 @@ def evaluate_model(model, X_test, y_test) -> dict[str, float]:
         )
 
     metrics = {
-        "accuracy": accuracy_score(y_true, predictions),
-        "precision": precision_score(
-            y_true,
-            predictions,
-            pos_label=1,
-            average="binary",
-            zero_division=0,
-        ),
-        "recall": recall_score(
-            y_true,
-            predictions,
-            pos_label=1,
-            average="binary",
-            zero_division=0,
-        ),
-        "f1": f1_score(
-            y_true,
-            predictions,
-            pos_label=1,
-            average="binary",
-            zero_division=0,
-        ),
+        **score_predictions(y_true, predictions),
         "roc_auc": roc_auc_score(y_true, positive_probabilities),
         "brier_score": brier_score_loss(
             y_true,

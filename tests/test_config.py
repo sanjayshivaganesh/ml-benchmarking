@@ -10,6 +10,7 @@ from src.experiments.config import (
     DEFAULT_CONFIG_PATH,
     DEFAULT_RANDOM_STATE,
     DEFAULT_TEST_SIZE,
+    apply_overrides,
     load_config,
 )
 from src.experiments.registry import (
@@ -69,6 +70,13 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(config.test_size, DEFAULT_TEST_SIZE)
         self.assertEqual(config.test_size, 0.2)
         self.assertEqual(config.output_dir, (PROJECT_ROOT / "outputs" / "experiments").resolve())
+        self.assertTrue(config.diagnostics.enabled)
+        self.assertTrue(config.diagnostics.slicing)
+        self.assertTrue(config.diagnostics.hard_examples)
+        self.assertTrue(config.diagnostics.robustness)
+        self.assertTrue(config.diagnostics.explanations)
+        self.assertTrue(config.diagnostics.report)
+        self.assertTrue(config.diagnostics.plots)
 
     def test_omitted_seed_and_split_use_the_phase1_defaults(self):
         payload = {
@@ -81,6 +89,8 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(config.models, ("random_forest",))
         self.assertEqual(config.random_state, 42)
         self.assertEqual(config.test_size, 0.2)
+        self.assertFalse(config.diagnostics.enabled)
+        self.assertTrue(config.diagnostics.robustness)
 
     def test_config_all_expands_from_the_model_registry(self):
         payload = {
@@ -131,6 +141,29 @@ class ConfigurationTests(unittest.TestCase):
             load_config(self._write({**valid, "output_dir": "models"}))
         with self.assertRaises(ValueError):
             load_config(self._write({key: value for key, value in valid.items() if key != "dataset"}))
+
+    def test_diagnostics_block_stays_inside_the_experiment_config(self):
+        payload = {
+            "dataset": "breast_cancer",
+            "models": ["logistic_regression"],
+            "output_dir": "outputs/experiments",
+            "diagnostics": {"enabled": True, "robustness": False},
+        }
+        config = load_config(self._write(payload))
+        self.assertTrue(config.diagnostics.enabled)
+        self.assertFalse(config.diagnostics.robustness)
+        self.assertTrue(config.diagnostics.slicing)
+        self.assertTrue(config.diagnostics.report)
+        disabled = apply_overrides(config, diagnostics_enabled=False)
+        self.assertFalse(disabled.diagnostics.enabled)
+        self.assertFalse(disabled.diagnostics.robustness)
+        self.assertEqual(disabled.dataset, config.dataset)
+        with self.assertRaises(ValueError) as unknown:
+            load_config(self._write({**payload, "diagnostics": {"shap": True}}))
+        self.assertIn("Unknown diagnostics field", str(unknown.exception))
+        with self.assertRaises(ValueError) as bad_flag:
+            load_config(self._write({**payload, "diagnostics": {"enabled": "yes"}}))
+        self.assertIn("diagnostics.enabled", str(bad_flag.exception))
 
     def test_config_loading_is_not_in_the_experiment_runner(self):
         import src.experiments.experiment as experiment_module

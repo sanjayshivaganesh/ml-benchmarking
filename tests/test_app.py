@@ -1,5 +1,6 @@
 """Tests for the Streamlit experiment dashboard."""
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,7 @@ import matplotlib.pyplot as plt
 
 import app
 from src.data.data_loader import SUPPORTED_DATASETS
+from src.diagnostics.hard_examples import hard_examples_directory
 from src.experiments.visualization import (
     metric_comparison_table,
     plot_confusion_matrices,
@@ -130,6 +132,21 @@ class DashboardResultTests(unittest.TestCase):
             figure = plot_confusion_matrices(result)
             self.assertTrue((outcome.output_dir / "metrics.json").is_file())
             self.assertTrue((outcome.output_dir / "error_analysis.json").is_file())
+            hard_path = (
+                hard_examples_directory(outcome.output_dir)
+                / "breast_cancer_logistic_regression_hard_examples.json"
+            )
+            self.assertTrue(hard_path.is_file())
+            hard_payload = json.loads(hard_path.read_text(encoding="utf-8"))
+            hard_table = app.hard_example_table(hard_payload["high_confidence_errors"])
+            self.assertIn("sample_id", hard_table.columns)
+            self.assertIn("y_true", hard_table.columns)
+            self.assertIn("y_pred", hard_table.columns)
+            self.assertIn("mean radius", hard_table.columns)
+            self.assertEqual(
+                hard_table["sample_id"].tolist(),
+                [row["sample_id"] for row in hard_payload["high_confidence_errors"]],
+            )
 
         self.assertEqual(result.dataset, "breast_cancer")
         self.assertEqual(result.models, ("logistic_regression",))

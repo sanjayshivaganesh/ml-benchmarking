@@ -3,7 +3,9 @@
 Training goes through ``train_one``. Metrics and error analysis use the
 single-model Phase 1 functions. This module does not call the full-grid
 batch writers, and it stores fitted pipelines under ``outputs/experiments``
-unless the caller passes another directory.
+unless the caller passes another directory. After scoring, it writes one
+prediction CSV, one slice file, and one hard-example file per selected
+model from the predictions already stored on the result.
 """
 
 from __future__ import annotations
@@ -18,6 +20,9 @@ import pandas as pd
 
 from src.analysis.error_analysis import analyze_errors
 from src.data.data_loader import load_dataset
+from src.diagnostics.hard_examples import save_experiment_hard_examples
+from src.diagnostics.prediction_store import save_experiment_predictions
+from src.diagnostics.slicing import save_experiment_slices
 from src.evaluation.evaluate import evaluate_model
 from src.experiments.registry import resolve_models, validate_dataset
 from src.models.models import get_models
@@ -115,7 +120,7 @@ def run_experiment(
         fitted[model_name] = model_result
 
     class_labels = dict(split.metadata["class_labels"])
-    return ExperimentResult(
+    result = ExperimentResult(
         dataset=dataset_name,
         models=selected,
         random_state=random_state,
@@ -136,6 +141,10 @@ def run_experiment(
         y_test=split.y_test.copy(),
         feature_names=list(split.feature_names),
     )
+    save_experiment_predictions(result, output_dir)
+    save_experiment_slices(result, output_dir)
+    save_experiment_hard_examples(result, output_dir)
+    return result
 
 
 def _score_model(pipeline, trained: TrainedModel, split) -> ModelResult:

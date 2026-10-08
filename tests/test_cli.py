@@ -150,6 +150,7 @@ class CommandLineTests(unittest.TestCase):
             self.assertTrue((experiment_dir / "error_analysis.json").is_file())
 
         self.assertEqual(code, 0, stderr)
+        self.assertNotIn("[1/", stdout)
         self.assertIn("Experiment breast_cancer__logistic_regression+random_forest__rs7__ts0p3", stdout)
         self.assertIn("Class labels: 0 = malignant, 1 = benign", stdout)
         self.assertEqual(metadata["class_labels"], {"0": "malignant", "1": "benign"})

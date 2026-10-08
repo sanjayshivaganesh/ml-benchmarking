@@ -10,15 +10,23 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Sequence
 
 import numpy as np
 
+from src.diagnostics.hard_examples import hard_examples_directory
 from src.evaluation.evaluate import METRIC_NAMES
-from src.experiments.config import ExperimentConfig
+from src.experiments.config import DiagnosticsConfig, ExperimentConfig
 from src.experiments.experiment import ExperimentResult, run_experiment
 
 _DISPLAY_DECIMALS = 4
+STEP_LOADING = "Loading experiment"
+STEP_GENERATING_PREDICTIONS = "Generating predictions"
+STEP_REUSING_PREDICTIONS = "Reusing saved predictions"
+STEP_SLICING = "Running error slicing"
+STEP_HARD_EXAMPLES = "Mining hard examples"
+STEP_ROBUSTNESS = "Running robustness analysis"
+STEP_REPORT = "Generating diagnostic report"
 
 
 @dataclass(frozen=True)
@@ -27,7 +35,10 @@ class Phase2Run:
 
     experiment_id: str
     output_dir: Path
-    result: ExperimentResult
+    result: ExperimentResult | None = None
+    diagnostics: Any = None
+    report_paths: Any = None
+    reused_artifacts: bool = False
 
 
 def run_phase2(config: ExperimentConfig) -> Phase2Run:
@@ -76,8 +87,101 @@ def make_experiment_id(
     )
 
 
+def run_configured_experiment(
+    config: ExperimentConfig,
+    *,
+    noise_levels: Sequence[float] | None = None,
+    n_seeds: int | None = None,
+    report_directory: Path | str | None = None,
+    echo: Callable[[str], None] = print,
+) -> Phase2Run:
+    """Train or load one experiment, then run configured diagnostics.
+
+    Diagnostics stay off unless ``config.diagnostics.enabled`` is true.
+    A saved model, prediction file, and metric file are reused. Requesting
+    diagnostics does not train that experiment again.
+    """
+    if not isinstance(config, ExperimentConfig):
+        raise TypeError("run_configured_experiment expects an ExperimentConfig.")
+    if not config.diagnostics.enabled:
+        return run_phase2(config)
+    if not callable(echo):
+        raise TypeError("echo must be a callable.")
+    from src.diagnostics.diagnostic_engine import run_diagnostics
+    from src.diagnostics.report import write_diagnostic_reports
+    from src.diagnostics.workflow import _has_saved_models
+
+    experiment_id = make_experiment_id(
+        config.dataset,
+        config.models,
+        config.random_state,
+        config.test_size,
+    )
+    experiment_dir = config.output_dir / experiment_id
+    progress = _Progress(_progress_total(config.diagnostics), echo)
+    progress(STEP_LOADING)
+    reused = _has_saved_models(experiment_dir, config.models)
+    trained = None
+    if reused:
+        progress(STEP_REUSING_PREDICTIONS)
+        _publish_saved_predictions(experiment_dir, config.models)
+    else:
+        progress(STEP_GENERATING_PREDICTIONS)
+        trained = run_phase2(config)
+    diagnosed = run_diagnostics(
+        config,
+        noise_levels=noise_levels,
+        n_seeds=n_seeds,
+        slicing=config.diagnostics.slicing,
+        hard_examples=config.diagnostics.hard_examples,
+        robustness=config.diagnostics.robustness,
+        explanations=config.diagnostics.explanations,
+        progress=progress,
+    )
+    report_paths = None
+    if config.diagnostics.report:
+        progress(STEP_REPORT)
+        report_paths = write_diagnostic_reports(diagnosed, directory=report_directory)
+    if config.diagnostics.plots:
+        from src.diagnostics.plots import save_diagnostic_plots
+
+        save_diagnostic_plots(diagnosed)
+    return Phase2Run(
+        experiment_id=experiment_id,
+        output_dir=experiment_dir,
+        result=None if trained is None else trained.result,
+        diagnostics=diagnosed,
+        report_paths=report_paths,
+        reused_artifacts=reused,
+    )
+
+
 def format_summary(run: Phase2Run) -> str:
     """Return a short text summary of one finished experiment."""
+    if run.result is None:
+        lines = _saved_summary_lines(run)
+    else:
+        lines = _result_summary_lines(run)
+    if run.report_paths is not None:
+        lines.extend(
+            [
+                "",
+                f"Report: {run.report_paths.markdown_path}",
+                f"Robustness report: {run.report_paths.robustness_path}",
+                f"Model comparison: {run.report_paths.comparison_path}",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the project-root command-line entry."""
+    import main as cli
+
+    return cli.main(argv)
+
+
+def _result_summary_lines(run: Phase2Run) -> list[str]:
     result = run.result
     lines = [
         f"Experiment {run.experiment_id}",
@@ -87,23 +191,80 @@ def format_summary(run: Phase2Run) -> str:
         f"random_state: {result.random_state}",
         f"test_size: {result.test_size}",
         f"Output: {run.output_dir}",
+        f"Hard examples: {hard_examples_directory(run.output_dir)}",
         "",
     ]
     for model_name in result.models:
-        metrics = result.metrics[model_name]
-        rendered = "  ".join(
-            f"{name}={metrics[name]:.{_DISPLAY_DECIMALS}f}" for name in METRIC_NAMES
-        )
-        lines.append(f"{model_name}: {rendered}")
+        lines.append(_metric_line(model_name, result.metrics[model_name]))
     lines.extend(["", "Full-precision metrics are in metrics.json."])
-    return "\n".join(lines)
+    return lines
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Run the project-root command-line entry."""
-    import main as cli
+def _saved_summary_lines(run: Phase2Run) -> list[str]:
+    metadata = json.loads((run.output_dir / "metadata.json").read_text(encoding="utf-8"))
+    metrics = json.loads((run.output_dir / "metrics.json").read_text(encoding="utf-8"))
+    class_labels = {
+        int(label): name for label, name in dict(metadata.get("class_labels") or {}).items()
+    }
+    models = list(metadata.get("models") or [])
+    lines = [
+        f"Experiment {run.experiment_id}",
+        f"Dataset: {metadata.get('dataset')}",
+        f"Models: {', '.join(models)}",
+        f"Class labels: {_class_label_text(class_labels)}",
+        f"random_state: {metadata.get('random_state')}",
+        f"test_size: {metadata.get('test_size')}",
+        f"Output: {run.output_dir}",
+        f"Hard examples: {hard_examples_directory(run.output_dir)}",
+        "Reused saved predictions.",
+        "",
+    ]
+    for model_name in models:
+        lines.append(_metric_line(model_name, metrics[model_name]))
+    lines.extend(["", "Full-precision metrics are in metrics.json."])
+    return lines
 
-    return cli.main(argv)
+
+def _metric_line(model_name: str, metrics: dict[str, Any]) -> str:
+    rendered = "  ".join(
+        f"{name}={metrics[name]:.{_DISPLAY_DECIMALS}f}" for name in METRIC_NAMES
+    )
+    return f"{model_name}: {rendered}"
+
+
+def _publish_saved_predictions(experiment_dir: Path, models: tuple[str, ...] | list[str]) -> None:
+    """Write prediction CSVs from ``predictions.json`` without scoring again."""
+    from src.diagnostics.prediction_store import (
+        PredictionStore,
+        prediction_directory,
+        prediction_filename,
+    )
+
+    payload = json.loads((experiment_dir / "predictions.json").read_text(encoding="utf-8"))
+    destination = prediction_directory(experiment_dir)
+    dataset = payload.get("dataset")
+    for model_name in models:
+        store = PredictionStore.from_phase2_predictions(payload, model_name)
+        store.save_csv(destination / prediction_filename(str(dataset), model_name))
+
+
+def _progress_total(diagnostics: DiagnosticsConfig) -> int:
+    return 2 + int(diagnostics.slicing) + int(diagnostics.hard_examples) + int(
+        diagnostics.robustness
+    ) + int(diagnostics.report)
+
+
+class _Progress:
+    """Number the diagnostic stages in the order they run."""
+
+    def __init__(self, total: int, echo: Callable[[str], None]) -> None:
+        self.total = total
+        self.echo = echo
+        self.index = 0
+
+    def __call__(self, label: str) -> None:
+        self.index += 1
+        self.echo(f"[{self.index}/{self.total}] {label}")
 
 
 def _write_outputs(result: ExperimentResult, output_dir: Path, experiment_id: str) -> None:

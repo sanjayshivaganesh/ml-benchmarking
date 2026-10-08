@@ -1,30 +1,32 @@
-"""Command-line entry for one Phase 2 experiment.
+"""Run the Phase 3 diagnostic engine for one configured experiment.
 
-Argument parsing, configuration overrides, and validation happen here.
-Dataset loading, training, metrics, and error analysis stay in the Phase 1
-modules reached through ``run_experiment``. Diagnostics run afterward when
-the configuration enables them.
+Uses the Phase 2 configuration and registry. Saved models and predictions
+are reused. The model is trained only when that experiment has no artifacts
+yet.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 
+from src.diagnostics.diagnostic_engine import format_diagnostic_engine
 from src.experiments.config import apply_overrides, load_config
 from src.experiments.registry import list_datasets, list_models
-from src.diagnostics.diagnostic_engine import format_diagnostic_engine
 from src.run_phase2 import format_summary, run_configured_experiment
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """Parse command-line overrides for ``config.json``."""
+    """Parse the same experiment selectors the Phase 2 command accepts."""
     datasets = ", ".join(list_datasets())
     models = ", ".join(list_models())
     parser = argparse.ArgumentParser(
         description=(
-            "Run one experiment on a Phase 1 dataset and selected models. "
-            "Diagnostics run when enabled in the configuration."
+            "Run slicing, hard-example, robustness, and explanation "
+            "diagnostics, then write the failure report. "
+            "Reuses a saved experiment when it exists. "
+            f"Available datasets: {datasets}."
         )
     )
     parser.add_argument(
@@ -57,38 +59,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Configuration file. Defaults to config.json.",
     )
-    diagnostics = parser.add_mutually_exclusive_group()
-    diagnostics.add_argument(
-        "--diagnostics",
-        action="store_true",
-        help="Run diagnostics after evaluation, even when the configuration disables them.",
-    )
-    diagnostics.add_argument(
-        "--no-diagnostics",
-        action="store_true",
-        help="Train and evaluate without diagnostics.",
-    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Load config, apply overrides, run one experiment, and print a summary."""
+    """Load config, apply overrides, and diagnose the selected experiment."""
     args = parse_args(argv)
     try:
         config = load_config(args.config)
-        diagnostics_enabled = None
-        if args.diagnostics:
-            diagnostics_enabled = True
-        elif args.no_diagnostics:
-            diagnostics_enabled = False
         config = apply_overrides(
             config,
             dataset=args.dataset,
             models=args.models,
             random_state=args.random_state,
             test_size=args.test_size,
-            diagnostics_enabled=diagnostics_enabled,
         )
+        config = replace(config, diagnostics=replace(config.diagnostics, enabled=True))
         outcome = run_configured_experiment(config)
     except (ValueError, TypeError, FileNotFoundError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
